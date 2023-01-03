@@ -1,8 +1,11 @@
 ﻿using System.Diagnostics;
+using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.InputFiles;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace TelegramBotCiSharpHelper
 {
@@ -24,7 +27,7 @@ namespace TelegramBotCiSharpHelper
 
         private Task Errors(ITelegramBotClient botClient, Exception exception, CancellationToken token)
         {
-            throw new NotImplementedException();
+            throw exception;
         }
 
         private async Task ProcessUpdate(ITelegramBotClient botClient, Update update, CancellationToken token)
@@ -41,6 +44,8 @@ namespace TelegramBotCiSharpHelper
                 case Telegram.Bot.Types.Enums.UpdateType.ChosenInlineResult:
                     break;
                 case Telegram.Bot.Types.Enums.UpdateType.CallbackQuery:
+                    // обработка InlineKeyboardButton
+                    await ProcessingInlineButtons(update);
                     break;
                 case Telegram.Bot.Types.Enums.UpdateType.EditedMessage:
                     break;
@@ -68,6 +73,12 @@ namespace TelegramBotCiSharpHelper
             }
         }
 
+        private async Task ProcessingInlineButtons(Update update)
+        {
+            var foodTitle = Regex.Match(update.CallbackQuery.Message.Caption, @"\'(.+)\'");
+            await _botClient.SendTextMessageAsync(update.CallbackQuery.From.Id, $"Вы успешно заказали товар {foodTitle.Value}");
+        }
+
         private async Task UpdateMessage(Update update)
         {
             var message = update.Message;
@@ -75,9 +86,28 @@ namespace TelegramBotCiSharpHelper
             {
                 if (message.Text is not null)
                 {
-                    if (message.Text.ToLower().Contains("здарова"))
+                    switch (message.Text.ToLower())
                     {
-                        await _botClient.SendTextMessageAsync(message.Chat.Id, "Здоровей видали!");
+                        case "здарова":
+                            await _botClient.SendTextMessageAsync(message.Chat.Id, "Здоровей видали!");
+                            break;
+                        case "/start":
+                            await _botClient.SendTextMessageAsync(
+                                    message.Chat.Id, "Выберите товар", replyMarkup: GetButtons()
+                                );
+                            break;
+                        case "десерт":
+                            await GetFood(update, "1.jpg");
+                            break;
+                        case "лосось с картофелем":
+                            await GetFood(update, "2.jpg");
+                            break;
+                        case "колбаски":
+                            await GetFood(update, "3.jpg");
+                            break;
+                        case "перепелка":
+                            await GetFood(update, "4.jpg");
+                            break;
                     }
                 }
                 else if (message.Photo is not null)
@@ -110,6 +140,48 @@ namespace TelegramBotCiSharpHelper
 
                 return;
             }
+        }
+
+        private async Task GetFood(Update update, string fileName)
+        {
+            var message = update.Message;
+            var imagePath = Path.Combine(Environment.CurrentDirectory, fileName);
+            using (var stream = System.IO.File.OpenRead(imagePath))
+            {
+                await _botClient.SendPhotoAsync(
+                        message.Chat.Id,
+                        new Telegram.Bot.Types.InputFiles.InputOnlineFile(stream),
+                        caption: $"Заказать '{message.Text}'",
+                        replyMarkup: GetInlineButtons(1));
+            }
+        }
+
+        private IReplyMarkup? GetButtons()
+        {
+            ReplyKeyboardMarkup replyKeyboardMarkup = new(new[]
+            {
+                new KeyboardButton[] { "Десерт", "Лосось с картофелем"},
+                new KeyboardButton[] { "Колбаски", "Перепелка" },
+            })
+            {
+                ResizeKeyboard = true
+            };
+
+            return replyKeyboardMarkup;
+        }
+
+        private IReplyMarkup? GetInlineButtons(int id)
+        {
+            InlineKeyboardMarkup inlineKeyboard = new(new[]
+            {
+                // first row
+                new []
+                {
+                    InlineKeyboardButton.WithCallbackData(text: "Заказать", callbackData: id.ToString()),
+                },
+            });
+
+            return inlineKeyboard;
         }
     }
 }
